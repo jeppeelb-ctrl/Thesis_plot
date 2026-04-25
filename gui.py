@@ -8,7 +8,7 @@ from Kaehler_Cone_Inequalities import (
     get_inequalities,
 )
 from plotting import Plotter
-from evaluator import evaluate_point
+from evaluator import evaluate_point, EQUATIONS
 
 
 class AxisChoice:
@@ -27,12 +27,12 @@ class AxisChoice:
 
 class App:
     """
-    Interactive controller for J(alpha, beta | geometry).
+    Interactive controller for equation(alpha, beta | geometry).
     Either axis can be any α[k] or β[k].
+    Equation can be switched via radio buttons.
     """
 
     def __init__(self, resolution=100):
-
         self.geometry = None
 
         self.alpha = None
@@ -41,11 +41,14 @@ class App:
         self.alpha_sliders = {}
         self.beta_sliders  = {}
 
-        self._x_radio = None
-        self._y_radio = None
+        self._x_radio  = None
+        self._y_radio  = None
+        self._eq_radio = None
 
         self.x_axis = AxisChoice("alpha", 0)
         self.y_axis = AxisChoice("beta",  0)
+
+        self.equation_name = next(iter(EQUATIONS))
 
         self._pending_rebuild = False
 
@@ -53,6 +56,7 @@ class App:
         self.axis_grid  = np.linspace(np.finfo(float).eps, 1.0, resolution)
 
         self.plotter = Plotter()
+        self.plotter.on_resolution_change = self.set_resolution
 
     # -------------------------------------------------------------------
     # GEOMETRY SETUP
@@ -61,42 +65,42 @@ class App:
     def set_geometry(self, geometry):
         self.geometry = geometry
 
+        self.plotter.plot_fan(geometry.rays)
+
         dim = geometry.divisor_dimension
 
         self.alpha = np.ones(dim)
         self.beta  = np.ones(dim)
 
         self.x_axis = AxisChoice("alpha", 0)
-        self.y_axis = AxisChoice("beta",  0) if dim > 0 else AxisChoice("alpha", min(1, dim - 1))
+        self.y_axis = AxisChoice("beta", 0) if dim > 1 else AxisChoice("alpha", 1)
 
         self._rebuild_controls()
 
-        raw_ineq    = compute_nonredundant_inequalities(self.geometry)
+        raw_ineq     = compute_nonredundant_inequalities(self.geometry)
         ineq_strings = get_inequalities(raw_ineq)
         self.plotter.set_inequalities(ineq_strings)
         self.update_plot()
 
     # -------------------------------------------------------------------
-    # WIDGET TEARDOWN HELPER
+    # WIDGET TEARDOWN
     # -------------------------------------------------------------------
 
     def _remove_widget(self, widget):
         """
         Safely disconnect and remove a Slider or RadioButtons widget.
-        Releases any mouse grab before touching the axes so matplotlib
-        does not throw 'Another Axes already grabs mouse input'.
+        Releases any mouse grab first to avoid 'Another Axes already
+        grabs mouse input'.
         """
         if widget is None:
             return
         try:
-            # Release mouse grab if this widget holds it
             canvas = self.plotter.fig.canvas
             if hasattr(canvas, "mouse_grabber") and canvas.mouse_grabber is widget.ax:
                 canvas.release_mouse(widget.ax)
         except Exception:
             pass
         try:
-            # Disconnect all callbacks registered by the widget
             widget.disconnect_events()
         except Exception:
             pass
@@ -104,6 +108,18 @@ class App:
             widget.ax.remove()
         except Exception:
             pass
+
+    def _remove_all_widgets(self):
+        self._remove_widget(self._x_radio)
+        self._remove_widget(self._y_radio)
+        self._remove_widget(self._eq_radio)
+        for slider in list(self.alpha_sliders.values()) + list(self.beta_sliders.values()):
+            self._remove_widget(slider)
+        self.alpha_sliders.clear()
+        self.beta_sliders.clear()
+        self._x_radio  = None
+        self._y_radio  = None
+        self._eq_radio = None
 
     # -------------------------------------------------------------------
     # HELPERS
@@ -125,7 +141,7 @@ class App:
                 return AxisChoice("alpha", k)
             if label == f"β[{alphabet[k]}]":
                 return AxisChoice("beta", k)
-        raise ValueError(f"Unknown axis label: {label}")
+        raise ValueError(f"Unknown axis label: {label!r}")
 
     def _active_index(self, choice):
         dim = len(self.alpha)
@@ -139,51 +155,57 @@ class App:
     # -------------------------------------------------------------------
 
     def _rebuild_controls(self):
-        fig = self.plotter.fig
+        self._remove_all_widgets()
 
-        # Safely tear down every existing widget before touching any axes
-        self._remove_widget(self._x_radio)
-        self._remove_widget(self._y_radio)
-
-        for slider in list(self.alpha_sliders.values()) + list(self.beta_sliders.values()):
-            self._remove_widget(slider)
-
-        self.alpha_sliders.clear()
-        self.beta_sliders.clear()
-        self._x_radio = None
-        self._y_radio = None
-
+        fig      = self.plotter.fig
         dim      = len(self.alpha)
-        n_labels = 2 * dim
-        labels   = self._all_labels()
         alphabet = string.ascii_lowercase
+        labels   = self._all_labels()
+        eq_names = list(EQUATIONS.keys())
 
-        # Layout
-        left     = 0
-        r_width  = 0.13
-        r_height = max(0.028 * n_labels, 0.08)
-        gap      = 0.02
-        slider_w = 0.30
-        slider_h = 0.025
-        spacing  = 0.035
-        top      = 1
+        # -- Layout constants --------------------------------------------
+        #
+        #   [eq radio]  [x radio]  [y radio]      <- top strip
+        #   [sliders, bottom-anchored]             <- below plot
+        #
+        n_axis_labels = 2 * dim
+        n_eq_labels   = len(eq_names)
 
-        # X-axis radio
-        ax_x = fig.add_axes([left, top - r_height, r_width, r_height])
+        r_width    = 0.05
+        gap        = 0.02
+        axis_h     = max(0.028 * n_axis_labels, 0.08)
+        eq_h       = max(0.040 * n_eq_labels,   0.08)
+        top        = 1.0
+        left_eq    = 0.0
+        left_x     = left_eq + r_width + gap + 0.15
+        left_y     = left_x  + r_width + gap + 0.3
+        slider_left = 0.05
+        slider_w   = 0.30
+        slider_h   = 0.025
+        spacing    = 0.035
+
+        # -- Equation radio ----------------------------------------------
+        ax_eq = fig.add_axes([left_eq, top - eq_h, r_width, eq_h])
+        ax_eq.set_title("equation", fontsize=8, pad=2)
+        active_eq      = eq_names.index(self.equation_name) if self.equation_name in eq_names else 0
+        self._eq_radio = RadioButtons(ax_eq, eq_names, active=active_eq)
+        self._eq_radio.on_clicked(self._on_equation_changed)
+
+        # -- X-axis radio ------------------------------------------------
+        ax_x = fig.add_axes([left_x, top - axis_h, r_width, axis_h])
         ax_x.set_title("x-axis", fontsize=8, pad=2)
         self._x_radio = RadioButtons(ax_x, labels, active=self._active_index(self.x_axis))
         self._x_radio.on_clicked(self._on_x_axis_changed)
 
-        # Y-axis radio
-        ax_y = fig.add_axes([left + r_width + gap, top - r_height, r_width, r_height])
+        # -- Y-axis radio ------------------------------------------------
+        ax_y = fig.add_axes([left_y, top - axis_h, r_width, axis_h])
         ax_y.set_title("y-axis", fontsize=8, pad=2)
         self._y_radio = RadioButtons(ax_y, labels, active=self._active_index(self.y_axis))
         self._y_radio.on_clicked(self._on_y_axis_changed)
 
-        # Sliders for every free coefficient
-        #y = top - r_height - spacing
-        slider_left = 0.05
-        y = 0.15
+        # -- Sliders -----------------------------------------------------
+        y = 0.2
+
         for k in range(dim):
             if AxisChoice("alpha", k) in (self.x_axis, self.y_axis):
                 continue
@@ -208,6 +230,7 @@ class App:
         fig.canvas.draw_idle()
 
     def _schedule_rebuild(self):
+        """Defer _rebuild_controls to after the current event returns."""
         if self._pending_rebuild:
             return
         self._pending_rebuild = True
@@ -225,17 +248,31 @@ class App:
     # RADIO CALLBACKS
     # -------------------------------------------------------------------
 
+    def set_resolution(self, res):
+        self.resolution = res
+        self.axis_grid = np.linspace(
+            np.finfo(float).eps,
+            1.0,
+            self.resolution
+        )
+        self.update_plot()
+
+    def _on_equation_changed(self, label):
+        self.equation_name = label
+        # No layout change needed — just recompute
+        self.update_plot()
+
     def _on_x_axis_changed(self, label):
         new_x = self._label_to_axis(label)
         if self._axes_conflict(new_x, self.y_axis):
-            self.y_axis = self.x_axis
+            self.y_axis = self.x_axis   # swap
         self.x_axis = new_x
         self._schedule_rebuild()
 
     def _on_y_axis_changed(self, label):
         new_y = self._label_to_axis(label)
         if self._axes_conflict(self.x_axis, new_y):
-            self.x_axis = self.y_axis
+            self.x_axis = self.y_axis   # swap
         self.y_axis = new_y
         self._schedule_rebuild()
 
@@ -272,10 +309,10 @@ class App:
     # -------------------------------------------------------------------
 
     def evaluate_slice(self):
-        n        = len(self.axis_grid)
-        X, Y     = np.meshgrid(self.axis_grid, self.axis_grid, indexing="ij")
-        J        = np.zeros((n, n))
-        mask     = np.zeros((n, n), dtype=bool)
+        n          = len(self.axis_grid)
+        X, Y       = np.meshgrid(self.axis_grid, self.axis_grid, indexing="ij")
+        J          = np.zeros((n, n))
+        mask       = np.zeros((n, n), dtype=bool)
         base_alpha = self.alpha.copy()
         base_beta  = self.beta.copy()
 
@@ -294,10 +331,9 @@ class App:
                 else:
                     beta[self.y_axis.k]  = Y[a, b]
 
-                val, valid    = evaluate_point((alpha, beta), self.geometry)
-                J[a, b]       = val
-                mask[a, b]    = valid
-
+                val, valid = evaluate_point(self.equation_name, (alpha, beta), self.geometry)
+                J[a, b]    = val
+                mask[a, b] = valid
         return X, Y, J, mask
 
     # -------------------------------------------------------------------
@@ -308,7 +344,12 @@ class App:
         if self.geometry is None:
             return
 
+        self.plotter.set_status("Computing...")
+        self.plotter.fig.canvas.flush_events()
+
         X, Y, J, mask = self.evaluate_slice()
+
+        self.plotter.set_status("Done")
 
         if self.plotter.im is None:
             self.plotter.plot_values(
@@ -325,6 +366,7 @@ class App:
             self.beta,
             self.x_axis,
             self.y_axis,
+            self.equation_name,
         )
 
     # -------------------------------------------------------------------

@@ -22,3 +22,4 @@ def parse_rays(input_str):
         rays.append(ray)
 
     return rays
+

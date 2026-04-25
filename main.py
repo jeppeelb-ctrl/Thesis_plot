@@ -18,7 +18,7 @@ def main():
 
     geometry = GeometryBuilder(fan).build()
 
-    app = App(resolution=5)
+    app = App()
 
     app.set_geometry(geometry)
 
