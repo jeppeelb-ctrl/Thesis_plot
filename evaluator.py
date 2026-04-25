@@ -97,13 +97,11 @@ def compute_full_factor(alpha, beta, surface):
     is_alpha_kaehler, alpha_invariant_intersections = is_kaehler(alpha, surface)
     is_beta_kaehler, beta_invariant_intersections = is_kaehler(beta, surface)
     if is_alpha_kaehler and is_beta_kaehler:
-        #print(f"alpha = {alpha}")
-        #print(f"beta = {beta}")
         alpha_squared = compute_alpha_squared(alpha=alpha, surface=surface)
         alpha_beta = compute_alpha_beta(alpha=alpha, beta=beta, surface=surface)
         first_factor = 2 * (alpha_beta / alpha_squared)
         for i in range(len(alpha_invariant_intersections)):
-            second_factor = (alpha_invariant_intersections[i] / beta_invariant_intersections[i])
+            second_factor = (beta_invariant_intersections[i] / alpha_invariant_intersections[i])
             full_factor = first_factor - second_factor
             if full_factor < result:
                 result = full_factor
@@ -111,7 +109,6 @@ def compute_full_factor(alpha, beta, surface):
     else:
 
         return 10, False
-
     return result, True
 
 

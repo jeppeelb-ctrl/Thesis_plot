@@ -8,7 +8,7 @@ def main():
 
     print("Enter fan rays in format: (1, 0), (0, 1), (-1, -1)")
     #raw = input("Rays: ")
-    raw = "(0, 1), (1, 2), (1, 1), (1, 0), (0, -1), (-1, -1)"
+    raw = "(0, 1), (1, 0), (-1, -1), (-1, 0)"
 
     fan = parse_rays(raw)
 
@@ -18,10 +18,7 @@ def main():
 
     geometry = GeometryBuilder(fan).build()
 
-    alpha_dim = geometry.divisor_dimension
-    beta_dim = geometry.divisor_dimension
-
-    app = App(resolution=200)
+    app = App(resolution=5)
 
     app.set_geometry(geometry)
 
