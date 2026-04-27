@@ -229,19 +229,3 @@ def get_inequalities(inequalities):
         ineqs.append(inequality)
     return ineqs
 
-# =========================
-# Main
-# =========================
-
-def main():
-    info = np.load("CasesOfInterestInfo/CSCKBlP22PointsInfo8.npy", allow_pickle=True)
-    rays = info[0]
-
-    surface = build_surface(rays)
-
-    print(f"Initial rays = {rays}")
-
-    inequalities = compute_nonredundant_inequalities(surface)
-
-    #for (lhs, rhs) in inequalities:
-    #    print(f"{lhs} > {rhs}")
