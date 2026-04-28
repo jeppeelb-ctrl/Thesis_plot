@@ -618,7 +618,7 @@ class App:
                 if div_idx is not None:
                     div_grid[a, b] = div_idx
 
-        self.plotter.set_status("Done")
+        self.plotter.set_status("Done!")
         return X, Y, J, mask, div_grid
 
     # -------------------------------------------------------------------
