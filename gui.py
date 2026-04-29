@@ -57,6 +57,21 @@ class App:
         self._ctrl_status  = None
         self._matrix_fig   = None
 
+        #Window 4: Linear
+        self._geo_fig      = None
+        self._geo_ax       = None
+        self._geo_line     = None
+        self._geo_marker0  = None
+        self._geo_marker1  = None
+        self.alpha1        = None
+        self.beta1         = None
+        self._geo_alpha0   = None
+        self._geo_beta0    = None
+        self._geo_textboxes_alpha = {}
+        self._geo_textboxes_beta  = {}
+        self._geo_sliders_alpha   = {}
+        self.geo_sliders_beta     = {}
+
         self.x_axis = AxisChoice("alpha", 0)
         self.y_axis = AxisChoice("beta",  0)
 
@@ -193,7 +208,7 @@ class App:
         )
 
         slider_h    = 0.045
-        spacing     = max(0.055, 0.85 / max(n_sliders, 1))
+        spacing     = 0.055
         slider_left = 0.12
         slider_w    = 0.80
         top         = 0.95
@@ -387,6 +402,263 @@ class App:
 
         self._matrix_fig.show()
 
+
+    def _build_geodesic_figure(self):
+        if self._geo_fig is not None:
+            try:
+                plt.close(self._geo_fig)
+            except Exception:
+                pass
+
+        from matplotlib.widgets import TextBox
+
+        dim      = len(self.alpha)
+        alphabet = string.ascii_lowercase
+
+        if self.alpha1 is None or len(self.alpha1) != dim:
+            self.alpha1 = self.alpha.copy()
+        if self.beta1 is None or len(self.beta1) != dim:
+            self.beta1 = self.beta.copy()
+
+        # alpha0/beta0 are independent copies for the geodesic,
+        # initialised to the current slider values but not linked to them
+        self._geo_alpha0 = self.alpha.copy()
+        self._geo_beta0  = self.beta.copy()
+
+        n_rows = 2 * dim     # one row per coefficient, for each of the two endpoints
+        fig_h  = max(6.0, 0.38 * n_rows * 2 + 3.5)
+
+        self._geo_fig = plt.figure("Geodesic", figsize=(6.0, fig_h))
+        self._geo_fig.subplots_adjust(
+            left=0.05, right=0.95, top=0.97, bottom=0.03
+        )
+
+        # -- 1D plot ---------------------------------------------------
+        plot_h   = 0.30
+        plot_top = 0.96
+
+        self._geo_ax = self._geo_fig.add_axes(
+            [0.14, plot_top - plot_h, 0.82, plot_h]
+        )
+        self._geo_ax.set_xlabel("$t$", fontsize=11)
+        self._geo_ax.set_ylabel(self.equation_name, fontsize=11)
+        self._geo_ax.set_xlim(0, 1)
+        self._geo_ax.axhline(0, color="black", linewidth=0.8, linestyle="--", zorder=1)
+        self._geo_ax.set_title(
+            r"$\alpha(t)=(1-t)\,\alpha + t\,\alpha',$"
+            r"$\quad\beta(t)=(1-t)\,\beta + t\,\beta'$",
+            fontsize=9,
+        )
+
+        self._geo_line, = self._geo_ax.plot(
+            [], [], color="steelblue", linewidth=2, zorder=2
+        )
+        self._geo_marker0, = self._geo_ax.plot(
+            [], [], "o", color="green", markersize=7, zorder=3, label="$t=0$"
+        )
+        self._geo_marker1, = self._geo_ax.plot(
+            [], [], "o", color="red", markersize=7, zorder=3, label="$t=1$"
+        )
+        self._geo_ax.legend(fontsize=8, loc="upper right")
+
+        # -- Layout constants ------------------------------------------
+        textbox_h   = 0.038
+        slider_h    = 0.038
+        row_spacing = 0.050
+        left_lbl    = 0.05
+        left_box    = 0.20    # textbox left edge
+        box_w       = 0.22    # textbox width
+        left_slider = 0.50    # slider left edge
+        slider_w    = 0.44
+
+        y = plot_top - plot_h - 0.06
+
+        # Column headers
+        self._geo_fig.text(
+            left_box + box_w / 2, y,
+            r"$\alpha,\,\beta$ (fixed)",
+            ha="center", va="bottom",
+            fontsize=9, fontstyle="italic",
+            transform=self._geo_fig.transFigure,
+            )
+        self._geo_fig.text(
+            left_slider + slider_w / 2, y,
+            r"$\alpha',\,\beta'$ (sliders)",
+            ha="center", va="bottom",
+            fontsize=9, fontstyle="italic",
+            transform=self._geo_fig.transFigure,
+            )
+
+        y -= 0.03
+
+        # -- α rows ----------------------------------------------------
+        self._geo_textboxes_alpha = {}
+        self._geo_sliders_alpha   = {}
+
+        for k in range(dim):
+            # Row label
+            self._geo_fig.text(
+                left_lbl, y - textbox_h / 2,
+                rf"$\alpha_{{{alphabet[k]}}}$",
+                ha="left", va="center",
+                fontsize=10,
+                transform=self._geo_fig.transFigure,
+                          )
+
+            # TextBox for α[k]
+            ax_tb = self._geo_fig.add_axes(
+                [left_box, y - textbox_h, box_w, textbox_h]
+            )
+            tb = TextBox(ax_tb, "", initial=f"{self._geo_alpha0[k]:.4f}")
+            tb.on_submit(self._make_geo_alpha0_textbox_callback(k))
+            self._geo_textboxes_alpha[k] = tb
+
+            # Slider for α'[k]
+            ax_s = self._geo_fig.add_axes(
+                [left_slider, y - slider_h, slider_w, slider_h]
+            )
+            slider = Slider(
+                ax=ax_s, label=f"α'[{alphabet[k]}]",
+                valmin=1e-6, valmax=1.0, valinit=self.alpha1[k]
+            )
+            slider.on_changed(self._make_geo_alpha_callback(k))
+            self._geo_sliders_alpha[k] = slider
+
+            y -= row_spacing
+
+        y -= 0.02   # small gap between α and β blocks
+
+        # -- β rows ----------------------------------------------------
+        self._geo_textboxes_beta = {}
+        self._geo_sliders_beta   = {}
+
+        for k in range(dim):
+            self._geo_fig.text(
+                left_lbl, y - textbox_h / 2,
+                rf"$\beta_{{{alphabet[k]}}}$",
+                ha="left", va="center",
+                fontsize=10,
+                transform=self._geo_fig.transFigure,
+                          )
+
+            ax_tb = self._geo_fig.add_axes(
+                [left_box, y - textbox_h, box_w, textbox_h]
+            )
+            tb = TextBox(ax_tb, "", initial=f"{self._geo_beta0[k]:.4f}")
+            tb.on_submit(self._make_geo_beta0_textbox_callback(k))
+            self._geo_textboxes_beta[k] = tb
+
+            ax_s = self._geo_fig.add_axes(
+                [left_slider, y - slider_h, slider_w, slider_h]
+            )
+            slider = Slider(
+                ax=ax_s, label=f"β'[{alphabet[k]}]",
+                valmin=1e-6, valmax=1.0, valinit=self.beta1[k]
+            )
+            slider.on_changed(self._make_geo_beta_callback(k))
+            self._geo_sliders_beta[k] = slider
+
+            y -= row_spacing
+
+        self._geo_fig.show()
+        self._update_geodesic_plot()
+
+    # -- TextBox callbacks (first endpoint) ----------------------------
+
+    def _make_geo_alpha0_textbox_callback(self, k):
+        def submit(text):
+            try:
+                val = float(text)
+                if val > 0:
+                    self._geo_alpha0[k] = val
+                    self._update_geodesic_plot()
+            except ValueError:
+                pass
+        return submit
+
+    def _make_geo_beta0_textbox_callback(self, k):
+        def submit(text):
+            try:
+                val = float(text)
+                if val > 0:
+                    self._geo_beta0[k] = val
+                    self._update_geodesic_plot()
+            except ValueError:
+                pass
+        return submit
+
+    # -- Slider callbacks (second endpoint) ---------------------------
+
+    def _make_geo_alpha_callback(self, k):
+        def update(val):
+            self.alpha1[k] = max(val, 1e-6)
+            self._update_geodesic_plot()
+        return update
+
+    def _make_geo_beta_callback(self, k):
+        def update(val):
+            self.beta1[k] = max(val, 1e-6)
+            self._update_geodesic_plot()
+        return update
+
+    # -- Plot update ---------------------------------------------------
+
+    def _update_geodesic_plot(self):
+        if self._geo_fig is None or self._geo_ax is None:
+            return
+        if self.geo_manager.current is None:
+            return
+        if self.alpha1 is None or self.beta1 is None:
+            return
+
+        from evaluator import evaluate_geodesic
+
+        t_vals, J_vals, valid = evaluate_geodesic(
+            self.equation_name,
+            self._geo_alpha0,
+            self._geo_beta0,
+            self.alpha1,
+            self.beta1,
+            self.geo_manager.current,
+        )
+
+        J_plot = np.where(valid, J_vals, np.nan)
+
+        self._geo_line.set_xdata(t_vals)
+        self._geo_line.set_ydata(J_plot)
+
+        if valid[0]:
+            self._geo_marker0.set_xdata([0])
+            self._geo_marker0.set_ydata([J_vals[0]])
+        else:
+            self._geo_marker0.set_xdata([])
+            self._geo_marker0.set_ydata([])
+
+        if valid[-1]:
+            self._geo_marker1.set_xdata([1])
+            self._geo_marker1.set_ydata([J_vals[-1]])
+        else:
+            self._geo_marker1.set_xdata([])
+            self._geo_marker1.set_ydata([])
+
+        self._geo_ax.relim()
+        self._geo_ax.autoscale_view(scalex=False)
+
+        finite = J_plot[~np.isnan(J_plot)]
+        crossing = (
+            "zero crossing: yes"
+            if finite.size > 0 and finite.min() * finite.max() < 0
+            else "zero crossing: no"
+        )
+        self._geo_ax.set_title(
+            r"$\alpha(t)=(1-t)\,\alpha + t\,\alpha',$"
+            r"$\quad\beta(t)=(1-t)\,\beta + t\,\beta'$"
+            f"\n{crossing}",
+            fontsize=9,
+        )
+
+        self._geo_fig.canvas.draw()
+
     # -------------------------------------------------------------------
     # GEOMETRY SETUP
     # -------------------------------------------------------------------
@@ -397,6 +669,10 @@ class App:
 
         self.alpha = np.ones(dim)
         self.beta  = np.ones(dim)
+        self.alpha1      = None
+        self.beta1       = None
+        self._geo_alpha0 = None
+        self._geo_beta0  = None
 
         max_k = dim - 1
         self.x_axis = AxisChoice(self.x_axis.vector, min(self.x_axis.k, max_k))
@@ -517,6 +793,9 @@ class App:
             self._set_ctrl_status(str(e))
             return
         self._apply_geometry()
+
+    def _on_open_geodesic(self, _):
+        self._build_geodesic_figure()
 
     # -------------------------------------------------------------------
     # SLIDER CALLBACKS
@@ -652,6 +931,7 @@ class App:
         self.plotter.plot_divisor_regions(X, Y, div_grid, mask)
         self.plotter.plot_zero_locus(X, Y, J, mask)
         self._update_inequality_colors()
+        self._update_geodesic_plot()
 
     # -------------------------------------------------------------------
     # RUN
@@ -666,6 +946,7 @@ class App:
         self.plotter.on_resolution_change = self._on_resolution_change
 
         self._apply_geometry()
+        self.plotter._geo_btn.on_clicked(self._on_open_geodesic)
         plt.show()
 
     def _on_resolution_change(self, new_res):

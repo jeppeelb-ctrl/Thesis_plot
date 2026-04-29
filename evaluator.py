@@ -168,6 +168,32 @@ def compute_full_factor_cscK(alpha, beta, surface):
     return -result, True, invariant_divisor
 
 
+def evaluate_geodesic(name, alpha0, beta0, alpha1, beta1, surface, n_points=500):
+    """
+    Evaluate J along the linear path
+        alpha(t) = (1-t)*alpha0 + t*alpha1
+        beta(t)  = (1-t)*beta0  + t*beta1
+    for t in [0, 1].
+    Returns (t_vals, J_vals, valid_mask).
+    """
+    t_vals = np.linspace(np.finfo(float).eps, 1.0, n_points)
+    J_vals = np.zeros(n_points)
+    valid  = np.zeros(n_points, dtype=bool)
+
+    fn = EQUATIONS.get(name)
+    if fn is None:
+        raise ValueError(f"Unknown equation: {name!r}")
+
+    for i, t in enumerate(t_vals):
+        alpha_t = (1 - t) * np.array(alpha0) + t * np.array(alpha1)
+        beta_t  = (1 - t) * np.array(beta0)  + t * np.array(beta1)
+        val, ok, _ = fn(alpha_t, beta_t, surface)
+        J_vals[i] = val if ok else np.nan
+        valid[i]  = ok
+
+    return t_vals, J_vals, valid
+
+
 EQUATIONS = {
     "J(α,β)": compute_full_factor_Jeq,
     "I(α)":   compute_full_factor_cscK,

@@ -86,6 +86,12 @@ class Plotter:
         self._zl_toggle_btn = Button(ax_zl_toggle, "Zero locus: ON")
         self._zl_toggle_btn.on_clicked(self._on_zero_locus_toggle)
 
+        # ------------------------
+        # GEODESIC WINDOW
+        # ------------------------
+        ax_geo = self.fig.add_axes([0.45, 0.07, 0.1, 0.04])
+        self._geo_btn = Button(ax_geo, "Geodesic")
+
         # -------------------------
         # STATUS TEXT
         # -------------------------
